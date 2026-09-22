@@ -14,9 +14,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  actions: read
-  security-events: write
 
 jobs:
   RunTerraformValidation:
@@ -62,10 +59,20 @@ jobs:
         uses: Home-Office-Digital/core-cloud-workflow-tflint-scan@268b840d0e48fa86be281a5727909655311f7af4 # 0.3.2
 
   sonarqube-scanner:
+      permissions:
+        contents: read
+        id-token: write
+        actions: read
+        security-events: write
       uses: Home-Office-Digital/core-cloud-workflow-sonarqube-scan/.github/workflows/sonarqube-scan.yaml@3f9613d4c02f2f84fb4982982c1b9cf8bf773579 # 1.2.0
       secrets:
         sonar_token: ${{ secrets.sonar_token }}
         sonar_host_url: ${{ secrets.sonar_host_url }}
 
   checkov-scan:
+      permissions:
+        contents: read
+        id-token: write
+        actions: read
+        security-events: write
       uses: Home-Office-Digital/core-cloud-workflow-checkov-sast-scan/.github/workflows/checkov-scan-base.yaml@4e35b9303f5f903d31701fae0fe65930ee543f04 # 1.20.5
