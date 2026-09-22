@@ -1,0 +1,31 @@
+name: Send Dependabot PRs to Slack
+
+on:
+  workflow_call:
+    secrets:
+      slack_webhook_url:
+        required: true
+  push:
+    branches:
+      - 'dependabot/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  RunTerraformValidation:
+    name: Run Dependabot PR Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Dependabot PR to Slack
+      ## slack-github-action@v1.26.0
+        uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          payload: |
+            {
+              "text": "New ${{ github.repository }} Dependabot PR Available for Review:\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}"
+            }
