@@ -46,25 +46,17 @@ Each entry in `var.clusters` is an object with the following attributes.
 | `serverlessv2_scaling` | object | `null` | `{ max_capacity, min_capacity = 0.5, seconds_until_auto_pause = null }` in ACUs. Set for Serverless v2. Use `min_capacity = 0` with `seconds_until_auto_pause` to enable scale-to-zero auto-pause. |
 | `allowed_cidr_blocks` | list(string) | `[]` | Reserved for per-cluster overrides; module SG uses `var.allowed_cidr_blocks`. |
 | `port` | number | `null` | Listener port override. Defaults to the engine port (3306 / 5432). |
-| `backup_retention_period` | number | `7` | Days to retain automated backups. |
 | `preferred_backup_window` | string | `"22:00-03:00"` | Daily backup window (must not overlap maintenance). |
 | `preferred_maintenance_window` | string | `"sun:06:00-sun:07:00"` | Weekly maintenance window. |
-| `copy_tags_to_snapshot` | bool | `true` | Copy cluster tags to snapshots. |
-| `deletion_protection` | bool | `true` | Prevent accidental cluster deletion. |
 | `skip_final_snapshot` | bool | `true` | Skip the final snapshot on destroy. |
 | `final_snapshot_identifier` | string | `null` | Name for the final snapshot when not skipped. |
 | `snapshot_identifier` | string | `null` | Restore the cluster from this snapshot. |
-| `storage_encrypted` | bool | `true` | Encrypt cluster storage. |
-| `kms_key_id` | string | `null` | KMS key ARN for storage encryption. |
+| `kms_key_id` | string | `null` | KMS key ARN for storage encryption (a CMK; storage is always encrypted). |
 | `manage_master_user_password` | bool | `true` | Let Aurora manage the master password in Secrets Manager. |
-| `auto_minor_version_upgrade` | bool | `true` | Apply minor version upgrades automatically. Set at both cluster and instance level. |
 | `allow_major_version_upgrade` | bool | `false` | Allow major engine version upgrades when changing `engine_version`. |
 | `enabled_cloudwatch_logs_exports` | list(string) | `[]` | Log types to export to CloudWatch. |
-| `performance_insights_enabled` | bool | `true` | Enable Performance Insights on instances. |
 | `performance_insights_kms_key_id` | string | `null` | KMS key for Performance Insights data. |
 | `performance_insights_retention_period` | number | `null` | Days to retain Performance Insights data (7, or `31 * n`, or 731). |
-| `monitoring_interval` | number | `0` | Enhanced Monitoring interval in seconds. |
-| `monitoring_role_arn` | string | `null` | IAM role ARN for Enhanced Monitoring. |
 | `create_cluster_parameter_group` | bool | `false` | Create a module-managed cluster parameter group. |
 | `cluster_parameter_group_name` | string | `null` | Name for the created/attached cluster parameter group. |
 | `cluster_parameter_group_family` | string | `null` | Family (required when creating). |
@@ -72,7 +64,29 @@ Each entry in `var.clusters` is an object with the following attributes.
 | `cluster_parameter_group_parameters` | list(object) | `[]` | `{ name, value, apply_method }` entries. |
 | `dns` | object | `null` | `{ writer_name, reader_name, ttl }` for Route53 records. |
 
-Module-level inputs include `project_name`, `environment`, `vpc_id`, `subnet_ids` (or `db_subnet_group_name`), `security_group_ids`, `vpc_security_group_ids`, `allowed_cidr_blocks`, `dns_zone`, `dns_ttl`, `manage_master_user_password`, and the mandatory Core Cloud `tags` object.
+### Enforced security baseline
+
+To guarantee a compliant, secure-by-default posture, the following are applied to **every** cluster and cannot be weakened per cluster:
+
+- Storage is always encrypted at rest.
+- Performance Insights and automatic minor version upgrades are always on.
+- Tags are always copied to snapshots.
+
+These are configured module-wide (not per cluster) so a caller cannot silently disable them:
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `backup_retention_period` | number | `7` | Days to retain automated backups for every cluster (minimum 1). |
+| `iam_database_authentication_enabled` | bool | `true` | Enable IAM database authentication for every cluster. |
+| `deletion_protection` | bool | `true` | Enable deletion protection for every cluster. Set `false` only for disposable/test clusters. |
+| `monitoring_interval` | number | `60` | Enhanced Monitoring interval (seconds) for every instance; `0` disables. A monitoring IAM role is created automatically when enabled. |
+| `monitoring_role_arn` | string | `null` | Bring your own Enhanced Monitoring role instead of the module-created one. |
+| `create_backup_plan` | bool | `true` | Create an AWS Backup vault, plan and selection covering every managed cluster. |
+| `backup_schedule` | string | `"cron(0 5 ? * * *)"` | Schedule for the AWS Backup plan rule. |
+| `backup_delete_after_days` | number | `35` | Days after which AWS Backup recovery points are deleted. |
+| `backup_vault_kms_key_arn` | string | `null` | KMS key ARN for the AWS Backup vault. |
+
+Other module-level inputs include `project_name`, `environment`, `vpc_id`, `subnet_ids` (or `db_subnet_group_name`), `security_group_ids`, `vpc_security_group_ids`, `allowed_cidr_blocks`, `dns_zone`, `dns_ttl`, and the mandatory Core Cloud `tags` object. Password management is configured per cluster via the `manage_master_user_password` attribute on each `clusters` entry.
 
 ## Examples
 

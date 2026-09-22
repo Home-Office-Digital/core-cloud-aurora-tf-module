@@ -29,40 +29,32 @@ variable "clusters" {
     allowed_cidr_blocks = optional(list(string), [])
     port                = optional(number, null)
 
-    # Backup / maintenance
-    backup_retention_period      = optional(number, 7)
+    # Backup / maintenance windows (retention is enforced module-wide via
+    # var.backup_retention_period).
     preferred_backup_window      = optional(string, "22:00-03:00")
     preferred_maintenance_window = optional(string, "sun:06:00-sun:07:00")
-    copy_tags_to_snapshot        = optional(bool, true)
 
     # Snapshots / lifecycle
-    deletion_protection       = optional(bool, true)
     skip_final_snapshot       = optional(bool, true)
     final_snapshot_identifier = optional(string, null)
     snapshot_identifier       = optional(string, null)
 
-    # Encryption
-    storage_encrypted = optional(bool, true)
-    kms_key_id        = optional(string, null)
+    # Encryption. Storage is always encrypted; kms_key_id optionally selects a
+    # customer-managed key (otherwise the AWS-managed aws/rds key is used).
+    kms_key_id = optional(string, null)
 
     # Security / secrets
     manage_master_user_password = optional(bool, true)
 
-    # Upgrades / monitoring.
-    # auto_minor_version_upgrade is applied at the cluster level (mirrors
-    # terraform-aws-modules/rds-aurora v10.3.0) as well as on each instance.
-    auto_minor_version_upgrade      = optional(bool, true)
+    # Upgrades.
     allow_major_version_upgrade     = optional(bool, false)
     enabled_cloudwatch_logs_exports = optional(list(string), [])
 
-    # Performance Insights and Enhanced Monitoring are configured at the cluster
-    # level (mirrors upstream cluster_performance_insights_* / cluster_monitoring_interval,
-    # v9.8.0 and v9.12.0) and propagate to the cluster instances.
-    performance_insights_enabled          = optional(bool, true)
+    # Performance Insights encryption/retention (Performance Insights itself is
+    # always enabled). Enhanced Monitoring is enforced module-wide via
+    # var.monitoring_interval / var.monitoring_role_arn.
     performance_insights_kms_key_id       = optional(string, null)
     performance_insights_retention_period = optional(number, null)
-    monitoring_interval                   = optional(number, 0)
-    monitoring_role_arn                   = optional(string, null)
 
     # Optional module-managed cluster parameter group
     create_cluster_parameter_group      = optional(bool, false)
@@ -142,10 +134,71 @@ variable "dns_ttl" {
   default     = 300
 }
 
-variable "manage_master_user_password" {
-  description = "Set to true to allow Aurora to manage the master user password in Secrets Manager. When true, no plaintext password is set."
+# =============================================================================
+# Security baseline (module-wide)
+#
+# These settings are applied to every cluster/instance so the module enforces a
+# secure-by-default posture. They are module-level (not per-cluster) so the
+# baseline cannot be silently weakened for an individual cluster.
+# =============================================================================
+
+variable "backup_retention_period" {
+  description = "Days to retain automated backups for every cluster. Must be at least 1."
+  type        = number
+  default     = 7
+
+  validation {
+    condition     = var.backup_retention_period >= 1
+    error_message = "backup_retention_period must be at least 1 day."
+  }
+}
+
+variable "iam_database_authentication_enabled" {
+  description = "Enable IAM database authentication for every cluster."
   type        = bool
   default     = true
+}
+
+variable "deletion_protection" {
+  description = "Enable deletion protection for every cluster. Set to false only for disposable/test clusters."
+  type        = bool
+  default     = true
+}
+
+variable "monitoring_interval" {
+  description = "Enhanced Monitoring interval in seconds for every instance (0 disables). Defaults to 60."
+  type        = number
+  default     = 60
+}
+
+variable "monitoring_role_arn" {
+  description = "IAM role ARN for Enhanced Monitoring. If null and monitoring_interval > 0, the module creates one."
+  type        = string
+  default     = null
+}
+
+variable "create_backup_plan" {
+  description = "Create an AWS Backup vault, plan and selection covering every managed cluster. Enabled by default so clusters are protected by a managed backup plan in addition to automated RDS backups."
+  type        = bool
+  default     = true
+}
+
+variable "backup_schedule" {
+  description = "Cron expression for the AWS Backup plan rule when create_backup_plan is true."
+  type        = string
+  default     = "cron(0 5 ? * * *)"
+}
+
+variable "backup_delete_after_days" {
+  description = "Number of days after which AWS Backup recovery points are deleted."
+  type        = number
+  default     = 35
+}
+
+variable "backup_vault_kms_key_arn" {
+  description = "KMS key ARN for the AWS Backup vault. If null, AWS Backup uses its default key."
+  type        = string
+  default     = null
 }
 
 variable "tags" {

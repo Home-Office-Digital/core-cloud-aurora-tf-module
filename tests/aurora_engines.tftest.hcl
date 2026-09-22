@@ -1,5 +1,13 @@
 // Mock provider to avoid real AWS calls during tests.
-mock_provider "aws" {}
+// aws_iam_policy_document.json is mocked with a valid JSON policy so IAM roles
+// (Enhanced Monitoring and AWS Backup) accept it during plan.
+mock_provider "aws" {
+  mock_data "aws_iam_policy_document" {
+    defaults = {
+      json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
+    }
+  }
+}
 
 variables {
   project_name = "demo"
@@ -89,6 +97,60 @@ run "aurora_mysql_defaults" {
   assert {
     condition     = aws_rds_cluster.this["mysql"].auto_minor_version_upgrade == true
     error_message = "auto_minor_version_upgrade must default to true at the cluster level"
+  }
+
+  # IAM database authentication is enabled by default.
+  assert {
+    condition     = aws_rds_cluster.this["mysql"].iam_database_authentication_enabled == true
+    error_message = "iam_database_authentication_enabled must default to true"
+  }
+
+  # Storage is always encrypted at rest.
+  assert {
+    condition     = aws_rds_cluster.this["mysql"].storage_encrypted == true
+    error_message = "storage_encrypted must be enforced to true"
+  }
+
+  # Deletion protection is enabled by default.
+  assert {
+    condition     = aws_rds_cluster.this["mysql"].deletion_protection == true
+    error_message = "deletion_protection must default to true"
+  }
+
+  # Automated backups retained for at least 1 day (default 7).
+  assert {
+    condition     = aws_rds_cluster.this["mysql"].backup_retention_period == 7
+    error_message = "backup_retention_period must default to 7 days"
+  }
+
+  # Cluster tags are copied to snapshots.
+  assert {
+    condition     = aws_rds_cluster.this["mysql"].copy_tags_to_snapshot == true
+    error_message = "copy_tags_to_snapshot must be enforced to true"
+  }
+
+  # Performance Insights is enabled on instances.
+  assert {
+    condition = alltrue([
+      for k, inst in aws_rds_cluster_instance.this : inst.performance_insights_enabled == true
+      if startswith(k, "mysql-")
+    ])
+    error_message = "performance_insights_enabled must be enforced to true"
+  }
+
+  # Enhanced Monitoring is enabled by default (interval > 0).
+  assert {
+    condition = alltrue([
+      for k, inst in aws_rds_cluster_instance.this : inst.monitoring_interval == 60
+      if startswith(k, "mysql-")
+    ])
+    error_message = "monitoring_interval must default to 60 seconds"
+  }
+
+  # An AWS Backup selection covers the managed cluster by default.
+  assert {
+    condition     = length(aws_backup_selection.this) == 1
+    error_message = "An AWS Backup selection must be created by default"
   }
 }
 
