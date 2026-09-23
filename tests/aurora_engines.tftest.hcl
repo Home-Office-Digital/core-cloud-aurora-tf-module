@@ -165,7 +165,7 @@ run "aurora_postgresql_defaults" {
         name           = "test-aurora-postgres"
         database_name  = "appdb"
         engine         = "aurora-postgresql"
-        engine_version = "15.4"
+        engine_version = "15.10"
         instance_class = "db.r6g.large"
       }
     }
@@ -202,7 +202,7 @@ run "aurora_serverless_v2" {
         name           = "test-aurora-serverless"
         database_name  = "appdb"
         engine         = "aurora-postgresql"
-        engine_version = "15.4"
+        engine_version = "15.10"
         instance_class = "db.serverless"
         instance_count = 1
         serverlessv2_scaling = {
@@ -231,6 +231,16 @@ run "aurora_serverless_v2" {
       if startswith(k, "serverless-")
     ])
     error_message = "Serverless v2 cluster instances must use db.serverless"
+  }
+
+  # Enhanced Monitoring is unsupported on Aurora Serverless v2, so the module
+  # disables it (monitoring_interval = 0) for db.serverless instances.
+  assert {
+    condition = alltrue([
+      for k, inst in aws_rds_cluster_instance.this : inst.monitoring_interval == 0
+      if startswith(k, "serverless-")
+    ])
+    error_message = "Enhanced Monitoring must be disabled (interval 0) for db.serverless instances"
   }
 }
 

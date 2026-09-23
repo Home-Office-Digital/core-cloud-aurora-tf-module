@@ -29,7 +29,7 @@ output "cluster_instance_ids" {
 }
 
 output "master_user_secret_arns" {
-  description = "A map of the Secrets Manager secret ARNs for the managed master user password, keyed by cluster key. Empty when manage_master_user_password is false."
+  description = "A map of the Secrets Manager secret ARNs for the managed master user password, keyed by cluster key. Null for clusters restored from a snapshot (which reuse the snapshot's credentials)."
   value = {
     for k, v in aws_rds_cluster.this : k => try(v.master_user_secret[0].secret_arn, null)
   }

@@ -16,7 +16,7 @@ A single `aws_db_subnet_group` is shared across clusters (or you can pass an exi
 
 Key design choices:
 
-- **No plaintext passwords.** With `manage_master_user_password = true` (the default) Aurora stores the master user password in AWS Secrets Manager. The secret ARN is exposed via the `master_user_secret_arns` output.
+- **No plaintext passwords.** Aurora always manages the master user password in AWS Secrets Manager (this is enforced, not configurable). The secret ARN is exposed via the `master_user_secret_arns` output.
 - **`for_each`, not `count`.** Both clusters and cluster instances are keyed maps, so adding or removing a cluster does not churn unrelated resources.
 - **Scoped egress.** Module-created security groups restrict egress to `allowed_cidr_blocks` rather than allowing all outbound traffic.
 
@@ -40,7 +40,7 @@ Each entry in `var.clusters` is an object with the following attributes.
 | `master_username` | string | `"root"` | Master username. Set only when not restoring from a snapshot. |
 | `engine` | string | — | `aurora-mysql` or `aurora-postgresql`. |
 | `engine_mode` | string | `"provisioned"` | Cluster engine mode. Use `provisioned` for Serverless v2. |
-| `engine_version` | string | `null` | Engine version (e.g. `8.0.mysql_aurora.3.05.2`, `15.4`). |
+| `engine_version` | string | `null` | Engine version (e.g. `8.0.mysql_aurora.3.05.2`, `15.10`). |
 | `instance_count` | number | `2` | Number of cluster instances. Defaults to 2 for HA. |
 | `instance_class` | string | — | Instance class (e.g. `db.r6g.large`, or `db.serverless` for Serverless v2). |
 | `serverlessv2_scaling` | object | `null` | `{ max_capacity, min_capacity = 0.5, seconds_until_auto_pause = null }` in ACUs. Set for Serverless v2. Use `min_capacity = 0` with `seconds_until_auto_pause` to enable scale-to-zero auto-pause. |
@@ -52,7 +52,6 @@ Each entry in `var.clusters` is an object with the following attributes.
 | `final_snapshot_identifier` | string | `null` | Name for the final snapshot when not skipped. |
 | `snapshot_identifier` | string | `null` | Restore the cluster from this snapshot. |
 | `kms_key_id` | string | `null` | KMS key ARN for storage encryption (a CMK; storage is always encrypted). |
-| `manage_master_user_password` | bool | `true` | Let Aurora manage the master password in Secrets Manager. |
 | `allow_major_version_upgrade` | bool | `false` | Allow major engine version upgrades when changing `engine_version`. |
 | `enabled_cloudwatch_logs_exports` | list(string) | `[]` | Log types to export to CloudWatch. |
 | `performance_insights_kms_key_id` | string | `null` | KMS key for Performance Insights data. |
@@ -86,7 +85,22 @@ These are configured module-wide (not per cluster) so a caller cannot silently d
 | `backup_delete_after_days` | number | `35` | Days after which AWS Backup recovery points are deleted. |
 | `backup_vault_kms_key_arn` | string | `null` | KMS key ARN for the AWS Backup vault. |
 
-Other module-level inputs include `project_name`, `environment`, `vpc_id`, `subnet_ids` (or `db_subnet_group_name`), `security_group_ids`, `vpc_security_group_ids`, `allowed_cidr_blocks`, `dns_zone`, `dns_ttl`, and the mandatory Core Cloud `tags` object. Password management is configured per cluster via the `manage_master_user_password` attribute on each `clusters` entry.
+Other module-level inputs include `project_name`, `environment`, `vpc_id`, `subnet_ids` (or `db_subnet_group_name`), `security_group_ids`, `vpc_security_group_ids`, `allowed_cidr_blocks`, `dns_zone`, `dns_ttl`, and the mandatory Core Cloud `tags` object. The master user password is always managed by Aurora in Secrets Manager and is not configurable.
+
+## Required IAM permissions
+
+The secure-by-default posture means the principal that runs `terraform apply` needs more than basic RDS permissions. In particular, the defaults pull in Secrets Manager, AWS Backup and IAM. A deploy role scoped only to `rds:*` will fail partway through an apply. The permissions below reflect what the module actually creates with default settings; scope the resource ARNs to your account and region where the action supports it.
+
+| Feature (default) | Permissions the deploy role needs |
+|---|---|
+| RDS cluster + instances, subnet group, parameter group | `rds:CreateDBCluster`, `rds:CreateDBInstance`, `rds:CreateDBSubnetGroup`, `rds:CreateDBClusterParameterGroup`, the matching `Delete`/`Modify`/`Describe`/tag actions, plus `rds:DescribeDBEngineVersions`, `rds:DescribeOrderableDBInstanceOptions` and `rds:DescribeGlobalClusters` (the provider reads global clusters while creating a cluster) |
+| Security group | `ec2:CreateSecurityGroup`, `ec2:AuthorizeSecurityGroup{Ingress,Egress}`, `ec2:RevokeSecurityGroup{Ingress,Egress}`, `ec2:DeleteSecurityGroup`, `ec2:CreateTags`, and the `ec2:Describe*` reads for VPCs, subnets, security groups and AZs |
+| Managed master password (always enabled) | `secretsmanager:CreateSecret`, `DeleteSecret`, `DescribeSecret`, `GetSecretValue`, `TagResource` on `rds!*` secrets. Without `CreateSecret` the cluster create fails with "not authorized to create a secret in AWS Secrets Manager" |
+| Storage / Performance Insights encryption | `kms:CreateKey`/`CreateAlias`/`DescribeKey`, plus `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`, `kms:CreateGrant`, `kms:RetireGrant` on the keys used |
+| Enhanced Monitoring role + AWS Backup role (`monitoring_interval > 0`, `create_backup_plan = true`) | `iam:CreateRole`, `iam:PassRole`, `iam:AttachRolePolicy`, `iam:GetRole`, and the matching `Delete`/`Detach`/`List`/tag actions for the module-created `*-aurora-monitoring` and `*-aurora-backup` roles |
+| AWS Backup vault, plan, selection (`create_backup_plan = true`) | `backup:CreateBackupVault`/`BackupPlan`/`BackupSelection` (+ `Delete`/`Get`/`Update`/tag), `backup-storage:MountCapsule` (required to create a vault), and the KMS permissions above for the vault key |
+
+If a feature is disabled (for example `create_backup_plan = false` or `monitoring_interval = 0`), the matching permissions are not required. The `module-testing/aurora-state-bootstrap` root module in [core-cloud-common-tf-module-testing](https://github.com/Home-Office-Digital/core-cloud-common-tf-module-testing) contains a working, least-privilege IAM policy for the full default feature set that can be used as a reference.
 
 ## Examples
 
@@ -134,7 +148,7 @@ module "aurora_postgresql" {
       name           = "analytics-warehouse"
       database_name  = "warehouse"
       engine         = "aurora-postgresql"
-      engine_version = "15.4"
+      engine_version = "15.10"
       instance_class = "db.r6g.xlarge"
       instance_count = 3
     }
@@ -163,7 +177,7 @@ module "aurora_serverless" {
       name           = "sandbox-api"
       database_name  = "api"
       engine         = "aurora-postgresql"
-      engine_version = "15.4"
+      engine_version = "15.10"
       instance_class = "db.serverless"
       instance_count = 1
       serverlessv2_scaling = {

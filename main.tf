@@ -56,23 +56,33 @@ resource "aws_security_group" "this" {
   description = "Security group for ${each.key} Aurora cluster"
   vpc_id      = var.vpc_id
 
-  ingress {
-    # Look up the port based on the cluster's engine type (or explicit override).
-    from_port   = local.cluster_ports[each.key]
-    to_port     = local.cluster_ports[each.key]
-    protocol    = "tcp"
-    cidr_blocks = var.allowed_cidr_blocks
-    description = "Ingress to ${each.key} Aurora cluster"
+  # Rules are only emitted when allowed_cidr_blocks is non-empty. A security
+  # group rule with an empty cidr_blocks list is rejected by the EC2 API, so a
+  # minimally configured module (no CIDRs) creates an empty security group and
+  # callers attach their own rules or supply allowed_cidr_blocks.
+  dynamic "ingress" {
+    for_each = length(var.allowed_cidr_blocks) > 0 ? [1] : []
+    content {
+      # Look up the port based on the cluster's engine type (or explicit override).
+      from_port   = local.cluster_ports[each.key]
+      to_port     = local.cluster_ports[each.key]
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_cidr_blocks
+      description = "Ingress to ${each.key} Aurora cluster"
+    }
   }
 
-  egress {
-    # Egress is restricted to the database port over TCP and scoped to the
-    # allowed CIDR blocks, rather than opening all protocols/ports (protocol -1).
-    from_port   = local.cluster_ports[each.key]
-    to_port     = local.cluster_ports[each.key]
-    protocol    = "tcp"
-    cidr_blocks = var.allowed_cidr_blocks
-    description = "Egress from ${each.key} Aurora cluster"
+  dynamic "egress" {
+    for_each = length(var.allowed_cidr_blocks) > 0 ? [1] : []
+    content {
+      # Egress is restricted to the database port over TCP and scoped to the
+      # allowed CIDR blocks, rather than opening all protocols/ports (protocol -1).
+      from_port   = local.cluster_ports[each.key]
+      to_port     = local.cluster_ports[each.key]
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_cidr_blocks
+      description = "Egress from ${each.key} Aurora cluster"
+    }
   }
 
   tags = merge(var.tags, {
@@ -123,11 +133,14 @@ resource "aws_rds_cluster" "this" {
   engine_mode        = each.value.engine_mode
   engine_version     = each.value.snapshot_identifier == null ? each.value.engine_version : null
 
-  # No plaintext password: either the module manages the master user password in
-  # Secrets Manager, or the master_username is set for a caller-managed secret.
+  # No plaintext password. The master user password is always managed by Aurora
+  # in AWS Secrets Manager (AWS-recommended), so the module never leaves a
+  # cluster without credentials and never handles a plaintext password. For a
+  # snapshot restore, RDS uses the snapshot's existing credentials, so neither
+  # the username nor managed-password flag is set.
   database_name               = each.value.snapshot_identifier == null ? each.value.database_name : null
-  master_username             = (each.value.snapshot_identifier == null && each.value.manage_master_user_password) ? each.value.master_username : null
-  manage_master_user_password = each.value.snapshot_identifier == null ? each.value.manage_master_user_password : null
+  master_username             = each.value.snapshot_identifier == null ? each.value.master_username : null
+  manage_master_user_password = each.value.snapshot_identifier == null ? true : null
 
   port                            = local.cluster_ports[each.key]
   db_subnet_group_name            = var.db_subnet_group_name != null ? data.aws_db_subnet_group.existing[0].name : aws_db_subnet_group.this[0].name
@@ -187,7 +200,10 @@ resource "aws_rds_cluster_instance" "this" {
   cluster_identifier = aws_rds_cluster.this[each.value.cluster_key].id
   instance_class     = each.value.instance_class
   engine             = each.value.cluster.engine
-  engine_version     = each.value.cluster.engine_version
+
+  # For a snapshot restore the instance inherits the snapshot's engine version;
+  # sending a caller-supplied version can make the restore fail, so pass null.
+  engine_version = each.value.cluster.snapshot_identifier == null ? each.value.cluster.engine_version : null
 
   db_subnet_group_name = var.db_subnet_group_name != null ? data.aws_db_subnet_group.existing[0].name : aws_db_subnet_group.this[0].name
 
@@ -200,14 +216,19 @@ resource "aws_rds_cluster_instance" "this" {
   performance_insights_kms_key_id       = each.value.cluster.performance_insights_kms_key_id
   performance_insights_retention_period = each.value.cluster.performance_insights_retention_period
 
-  # Enhanced Monitoring is enforced module-wide via var.monitoring_interval.
-  # A module-created role is used unless the caller supplies monitoring_role_arn.
-  monitoring_interval = var.monitoring_interval
-  monitoring_role_arn = var.monitoring_interval > 0 ? coalesce(var.monitoring_role_arn, try(aws_iam_role.rds_enhanced_monitoring[0].arn, null)) : null
+  # Enhanced Monitoring is enforced module-wide via var.monitoring_interval, but
+  # Aurora Serverless v2 (db.serverless) does not support it, so it is disabled
+  # for those instances.
+  monitoring_interval = each.value.instance_class == "db.serverless" ? 0 : var.monitoring_interval
+  monitoring_role_arn = each.value.instance_class != "db.serverless" && var.monitoring_interval > 0 ? coalesce(var.monitoring_role_arn, try(aws_iam_role.rds_enhanced_monitoring[0].arn, null)) : null
 
   tags = merge(var.tags, {
     Name = each.value.identifier
   })
+
+  # Ensure the Enhanced Monitoring policy is attached before the instance is
+  # created, otherwise RDS can reject the monitoring role on first apply.
+  depends_on = [aws_iam_role_policy_attachment.rds_enhanced_monitoring]
 }
 
 resource "aws_route53_record" "writer" {

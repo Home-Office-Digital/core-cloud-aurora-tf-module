@@ -43,8 +43,9 @@ variable "clusters" {
     # customer-managed key (otherwise the AWS-managed aws/rds key is used).
     kms_key_id = optional(string, null)
 
-    # Security / secrets
-    manage_master_user_password = optional(bool, true)
+    # Security / secrets. The master password is always managed by Aurora in
+    # Secrets Manager (not configurable), so there is no manage_master_user_password
+    # attribute. master_username names the managed master user.
 
     # Upgrades.
     allow_major_version_upgrade     = optional(bool, false)
