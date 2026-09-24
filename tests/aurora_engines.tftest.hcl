@@ -75,8 +75,9 @@ run "aurora_mysql_defaults" {
   # Security group ingress uses the MySQL port.
   assert {
     condition = alltrue([
-      for rule in aws_security_group.this["mysql"].ingress :
-      rule.from_port == 3306 && rule.to_port == 3306 && rule.protocol == "tcp"
+      for k, rule in aws_vpc_security_group_ingress_rule.this :
+      rule.from_port == 3306 && rule.to_port == 3306 && rule.ip_protocol == "tcp"
+      if startswith(k, "mysql|")
     ])
     error_message = "Aurora MySQL security group ingress must be TCP/3306"
   }
@@ -184,8 +185,9 @@ run "aurora_postgresql_defaults" {
 
   assert {
     condition = alltrue([
-      for rule in aws_security_group.this["postgres"].ingress :
-      rule.from_port == 5432 && rule.to_port == 5432 && rule.protocol == "tcp"
+      for k, rule in aws_vpc_security_group_ingress_rule.this :
+      rule.from_port == 5432 && rule.to_port == 5432 && rule.ip_protocol == "tcp"
+      if startswith(k, "postgres|")
     ])
     error_message = "Aurora PostgreSQL security group ingress must be TCP/5432"
   }

@@ -15,6 +15,30 @@ locals {
     )
   }
 
+  # Clusters for which the module creates a security group (caller did not
+  # supply their own via var.security_group_ids).
+  managed_sg_clusters = var.security_group_ids == null ? var.clusters : {}
+
+  # Ingress/egress rules are managed as individual
+  # aws_vpc_security_group_(ingress|egress)_rule resources rather than inline
+  # blocks, because an inline dynamic block that yields nothing does not remove
+  # existing rules (aws_security_group treats an absent block as "unmanaged").
+  # Keyed by "<cluster>|<cidr>" so adding/removing a CIDR creates/destroys just
+  # that rule.
+  sg_ingress_rules = merge([
+    for key, cluster in local.managed_sg_clusters : {
+      for cidr in var.allowed_cidr_blocks :
+      "${key}|${cidr}" => { cluster_key = key, cidr = cidr }
+    }
+  ]...)
+
+  sg_egress_rules = merge([
+    for key, cluster in local.managed_sg_clusters : {
+      for cidr in var.allowed_egress_cidr_blocks :
+      "${key}|${cidr}" => { cluster_key = key, cidr = cidr }
+    }
+  ]...)
+
   # Flatten cluster instances into a map keyed by "<cluster>-<index>" so we can
   # drive aws_rds_cluster_instance with for_each (never count). instance_count
   # defaults to 2 for HA (one writer, one or more readers).

@@ -51,44 +51,48 @@ resource "aws_db_subnet_group" "this" {
 }
 
 resource "aws_security_group" "this" {
-  for_each    = var.security_group_ids == null ? var.clusters : {}
+  for_each    = local.managed_sg_clusters
   name        = "${var.project_name}-${var.environment}-${each.key}-aurora-sg"
   description = "Security group for ${each.key} Aurora cluster"
   vpc_id      = var.vpc_id
 
-  # Rules are only emitted when allowed_cidr_blocks is non-empty. A security
-  # group rule with an empty cidr_blocks list is rejected by the EC2 API, so a
-  # minimally configured module (no CIDRs) creates an empty security group and
-  # callers attach their own rules or supply allowed_cidr_blocks.
-  dynamic "ingress" {
-    for_each = length(var.allowed_cidr_blocks) > 0 ? [1] : []
-    content {
-      # Look up the port based on the cluster's engine type (or explicit override).
-      from_port   = local.cluster_ports[each.key]
-      to_port     = local.cluster_ports[each.key]
-      protocol    = "tcp"
-      cidr_blocks = var.allowed_cidr_blocks
-      description = "Ingress to ${each.key} Aurora cluster"
-    }
-  }
-
-  # Egress is separate from ingress and only emitted when
-  # allowed_egress_cidr_blocks is set. By default no egress rule is created.
-  dynamic "egress" {
-    for_each = length(var.allowed_egress_cidr_blocks) > 0 ? [1] : []
-    content {
-      # Egress is restricted to the database port over TCP and scoped to the
-      # allowed egress CIDR blocks, rather than opening all protocols/ports.
-      from_port   = local.cluster_ports[each.key]
-      to_port     = local.cluster_ports[each.key]
-      protocol    = "tcp"
-      cidr_blocks = var.allowed_egress_cidr_blocks
-      description = "Egress from ${each.key} Aurora cluster"
-    }
-  }
-
   tags = merge(var.tags, {
     Name = "${var.project_name}-${var.environment}-${each.key}-aurora-sg"
+  })
+}
+
+# Ingress and egress are managed as individual rule resources rather than inline
+# blocks on aws_security_group. An inline dynamic block that yields nothing does
+# not remove a previously created rule, so clearing allowed_(egress_)cidr_blocks
+# would leave stale rules in place. With separate rule resources, removing a CIDR
+# destroys exactly that rule.
+resource "aws_vpc_security_group_ingress_rule" "this" {
+  for_each = local.sg_ingress_rules
+
+  security_group_id = aws_security_group.this[each.value.cluster_key].id
+  description       = "Ingress to ${each.value.cluster_key} Aurora cluster"
+  ip_protocol       = "tcp"
+  from_port         = local.cluster_ports[each.value.cluster_key]
+  to_port           = local.cluster_ports[each.value.cluster_key]
+  cidr_ipv4         = each.value.cidr
+
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-${var.environment}-${each.value.cluster_key}-aurora-ingress"
+  })
+}
+
+resource "aws_vpc_security_group_egress_rule" "this" {
+  for_each = local.sg_egress_rules
+
+  security_group_id = aws_security_group.this[each.value.cluster_key].id
+  description       = "Egress from ${each.value.cluster_key} Aurora cluster"
+  ip_protocol       = "tcp"
+  from_port         = local.cluster_ports[each.value.cluster_key]
+  to_port           = local.cluster_ports[each.value.cluster_key]
+  cidr_ipv4         = each.value.cidr
+
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-${var.environment}-${each.value.cluster_key}-aurora-egress"
   })
 }
 
