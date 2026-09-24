@@ -75,4 +75,4 @@ jobs:
         id-token: write
         actions: read
         security-events: write
-      uses: Home-Office-Digital/core-cloud-workflow-checkov-sast-scan/.github/workflows/checkov-scan-base.yaml@4e35b9303f5f903d31701fae0fe65930ee543f04 # 1.20.5
+      uses: Home-Office-Digital/core-cloud-workflow-checkov-sast-scan/.github/workflows/checkov-scan-base.yaml@121fa86c79521d82b4f92237493584f44d6d8143 # 1.21.0
