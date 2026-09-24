@@ -43,7 +43,7 @@ jobs:
           terraform-version: ~1.12.0
 
       - name: Terraform tests
-        uses: Home-Office-Digital/core-cloud-workflow-terraform-actions/actions/test@8426dac89fd06a74aad9788601029c12be3984c6 # 1.2.1
+        uses: Home-Office-Digital/core-cloud-workflow-terraform-actions/actions/test@17e774f175df28a98abdc7ed4030e6f624f659de # 1.2.5
 
       - name: terraform validate
         uses: Home-Office-Digital/core-cloud-workflow-terraform-actions/actions/validate@8426dac89fd06a74aad9788601029c12be3984c6 # 1.2.1
