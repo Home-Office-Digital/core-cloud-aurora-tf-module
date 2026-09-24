@@ -25,9 +25,9 @@ Key design choices:
 | Name | Version |
 |------|---------|
 | terraform | >= 1.7.5 |
-| aws | >= 6.61.0 |
+| aws | >= 6.66.0 |
 
-The AWS provider floor (`>= 6.61.0`) matches the requirement of [`terraform-aws-modules/rds-aurora`](https://registry.terraform.io/modules/terraform-aws-modules/rds-aurora/aws/latest) v10, whose recent conventions this module follows.
+The AWS provider floor (`>= 6.66.0`) matches the requirement of [`terraform-aws-modules/rds-aurora`](https://registry.terraform.io/modules/terraform-aws-modules/rds-aurora/aws/latest) v10, whose recent conventions this module follows.
 
 ## Clusters input
 
