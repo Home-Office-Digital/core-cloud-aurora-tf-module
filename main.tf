@@ -72,15 +72,17 @@ resource "aws_security_group" "this" {
     }
   }
 
+  # Egress is separate from ingress and only emitted when
+  # allowed_egress_cidr_blocks is set. By default no egress rule is created.
   dynamic "egress" {
-    for_each = length(var.allowed_cidr_blocks) > 0 ? [1] : []
+    for_each = length(var.allowed_egress_cidr_blocks) > 0 ? [1] : []
     content {
       # Egress is restricted to the database port over TCP and scoped to the
-      # allowed CIDR blocks, rather than opening all protocols/ports (protocol -1).
+      # allowed egress CIDR blocks, rather than opening all protocols/ports.
       from_port   = local.cluster_ports[each.key]
       to_port     = local.cluster_ports[each.key]
       protocol    = "tcp"
-      cidr_blocks = var.allowed_cidr_blocks
+      cidr_blocks = var.allowed_egress_cidr_blocks
       description = "Egress from ${each.key} Aurora cluster"
     }
   }
@@ -138,9 +140,10 @@ resource "aws_rds_cluster" "this" {
   # cluster without credentials and never handles a plaintext password. For a
   # snapshot restore, RDS uses the snapshot's existing credentials, so neither
   # the username nor managed-password flag is set.
-  database_name               = each.value.snapshot_identifier == null ? each.value.database_name : null
-  master_username             = each.value.snapshot_identifier == null ? each.value.master_username : null
-  manage_master_user_password = each.value.snapshot_identifier == null ? true : null
+  database_name                 = each.value.snapshot_identifier == null ? each.value.database_name : null
+  master_username               = each.value.snapshot_identifier == null ? each.value.master_username : null
+  manage_master_user_password   = each.value.snapshot_identifier == null ? true : null
+  master_user_secret_kms_key_id = each.value.snapshot_identifier == null ? each.value.master_user_secret_kms_key_id : null
 
   port                            = local.cluster_ports[each.key]
   db_subnet_group_name            = var.db_subnet_group_name != null ? data.aws_db_subnet_group.existing[0].name : aws_db_subnet_group.this[0].name

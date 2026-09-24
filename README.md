@@ -9,7 +9,7 @@ The module takes a `clusters` map of typed objects and, for each entry, creates:
 - An `aws_rds_cluster` (the Aurora cluster itself).
 - One or more `aws_rds_cluster_instance` members via `for_each` (defaults to 2 for high availability — one writer plus one reader).
 - An optional `aws_rds_cluster_parameter_group` when `create_cluster_parameter_group` is set.
-- A per-cluster `aws_security_group` (unless you supply your own via `security_group_ids`), with ingress and egress scoped to `allowed_cidr_blocks`.
+- A per-cluster `aws_security_group` (unless you supply your own via `security_group_ids`), with ingress scoped to `allowed_cidr_blocks` and, separately, egress scoped to `allowed_egress_cidr_blocks`.
 - Optional Route53 `CNAME` records for the writer and reader endpoints.
 
 A single `aws_db_subnet_group` is shared across clusters (or you can pass an existing one with `db_subnet_group_name`).
@@ -18,7 +18,7 @@ Key design choices:
 
 - **No plaintext passwords.** Aurora always manages the master user password in AWS Secrets Manager (this is enforced, not configurable). The secret ARN is exposed via the `master_user_secret_arns` output.
 - **`for_each`, not `count`.** Both clusters and cluster instances are keyed maps, so adding or removing a cluster does not churn unrelated resources.
-- **Scoped egress.** Module-created security groups restrict egress to `allowed_cidr_blocks` rather than allowing all outbound traffic.
+- **Scoped, separate egress.** Egress is controlled by a dedicated `allowed_egress_cidr_blocks` input (not the ingress list) and defaults to none, rather than allowing all outbound traffic.
 
 ## Requirements
 
@@ -52,6 +52,7 @@ Each entry in `var.clusters` is an object with the following attributes.
 | `final_snapshot_identifier` | string | `null` | Name for the final snapshot when not skipped. |
 | `snapshot_identifier` | string | `null` | Restore the cluster from this snapshot. |
 | `kms_key_id` | string | `null` | KMS key ARN for storage encryption (a CMK; storage is always encrypted). |
+| `master_user_secret_kms_key_id` | string | `null` | KMS key ID/ARN to encrypt the managed master-user secret. Defaults to the `aws/secretsmanager` key. |
 | `allow_major_version_upgrade` | bool | `false` | Allow major engine version upgrades when changing `engine_version`. |
 | `enabled_cloudwatch_logs_exports` | list(string) | `[]` | Log types to export to CloudWatch. |
 | `performance_insights_kms_key_id` | string | `null` | KMS key for Performance Insights data. |
@@ -85,7 +86,7 @@ These are configured module-wide (not per cluster) so a caller cannot silently d
 | `backup_delete_after_days` | number | `35` | Days after which AWS Backup recovery points are deleted. |
 | `backup_vault_kms_key_arn` | string | `null` | KMS key ARN for the AWS Backup vault. |
 
-Other module-level inputs include `project_name`, `environment`, `vpc_id`, `subnet_ids` (or `db_subnet_group_name`), `security_group_ids`, `vpc_security_group_ids`, `allowed_cidr_blocks`, `dns_zone`, `dns_ttl`, and the mandatory Core Cloud `tags` object. The master user password is always managed by Aurora in Secrets Manager and is not configurable.
+Other module-level inputs include `project_name`, `environment`, `vpc_id`, `subnet_ids` (or `db_subnet_group_name`), `security_group_ids`, `vpc_security_group_ids`, `allowed_cidr_blocks` (ingress), `allowed_egress_cidr_blocks` (egress; defaults to none), `dns_zone`, `dns_ttl`, and the mandatory Core Cloud `tags` object. The master user password is always managed by Aurora in Secrets Manager and is not configurable; optionally encrypt the managed secret with a customer-managed key via the per-cluster `master_user_secret_kms_key_id`.
 
 ## Required IAM permissions
 

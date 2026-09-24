@@ -46,6 +46,9 @@ variable "clusters" {
     # Security / secrets. The master password is always managed by Aurora in
     # Secrets Manager (not configurable), so there is no manage_master_user_password
     # attribute. master_username names the managed master user.
+    # master_user_secret_kms_key_id optionally encrypts the managed secret with a
+    # customer-managed KMS key (otherwise the default aws/secretsmanager key is used).
+    master_user_secret_kms_key_id = optional(string, null)
 
     # Upgrades.
     allow_major_version_upgrade     = optional(bool, false)
@@ -117,7 +120,14 @@ variable "vpc_security_group_ids" {
 }
 
 variable "allowed_cidr_blocks" {
-  description = "A list of CIDR blocks allowed to reach the cluster. Used for both ingress and egress on module-created security groups."
+  description = "A list of CIDR blocks allowed to reach the cluster (ingress) on module-created security groups. Empty means no ingress rule is created."
+  type        = list(string)
+  default     = []
+  nullable    = false
+}
+
+variable "allowed_egress_cidr_blocks" {
+  description = "A list of CIDR blocks the cluster is allowed to send egress traffic to on module-created security groups. Separate from ingress; defaults to empty so no egress rule is created unless explicitly set."
   type        = list(string)
   default     = []
   nullable    = false
