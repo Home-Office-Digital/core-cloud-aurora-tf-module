@@ -1,0 +1,78 @@
+name: Validate Terraform with Checkov, TFLint and Sonarqube
+
+on:
+  workflow_call:
+    secrets:
+      sonar_token:
+        required: true
+      sonar_host_url:
+        required: true
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  RunTerraformValidation:
+    name: Run Terraform SAST
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+      security-events: write
+    runs-on: ubuntu-latest
+    env:
+      TF_INPUT: "false"
+
+    steps:
+      - name: Clone the Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ~1.12.0
+
+      - name: terraform init (no backend)
+        uses: Home-Office-Digital/core-cloud-workflow-terraform-actions/actions/init@8426dac89fd06a74aad9788601029c12be3984c6 # 1.2.1
+        with:
+          use-backend: false
+          terraform-version: ~1.12.0
+
+      - name: Terraform tests
+        uses: Home-Office-Digital/core-cloud-workflow-terraform-actions/actions/test@8426dac89fd06a74aad9788601029c12be3984c6 # 1.2.1
+
+      - name: terraform validate
+        uses: Home-Office-Digital/core-cloud-workflow-terraform-actions/actions/validate@8426dac89fd06a74aad9788601029c12be3984c6 # 1.2.1
+
+      - name: Terraform Format
+        uses: Home-Office-Digital/core-cloud-workflow-terraform-actions/actions/fmt@ef895a4ff575e28fd32a289eb604b7e0869d4033 # 1.2.2
+        with:
+          recursive: false
+
+      - name: TFLint
+        id: lint
+        if: success() || failure()
+        uses: Home-Office-Digital/core-cloud-workflow-tflint-scan@268b840d0e48fa86be281a5727909655311f7af4 # 0.3.2
+
+  sonarqube-scanner:
+      permissions:
+        contents: read
+        id-token: write
+        actions: read
+        security-events: write
+      uses: Home-Office-Digital/core-cloud-workflow-sonarqube-scan/.github/workflows/sonarqube-scan.yaml@3f9613d4c02f2f84fb4982982c1b9cf8bf773579 # 1.2.0
+      secrets:
+        sonar_token: ${{ secrets.sonar_token }}
+        sonar_host_url: ${{ secrets.sonar_host_url }}
+
+  checkov-scan:
+      permissions:
+        contents: read
+        id-token: write
+        actions: read
+        security-events: write
+      uses: Home-Office-Digital/core-cloud-workflow-checkov-sast-scan/.github/workflows/checkov-scan-base.yaml@4e35b9303f5f903d31701fae0fe65930ee543f04 # 1.20.5

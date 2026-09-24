@@ -1,0 +1,25 @@
+## Example dependabot file
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    commit-message:
+      prefix: "(GHA)"
+    reviewers:
+      - "Home-Office-Digital/core-cloud-devops"
+    labels:
+      - "dependencies"
+      - "patch"
+  - package-ecosystem: "terraform"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    commit-message:
+      prefix: "(TF)"
+    reviewers:
+      - "Home-Office-Digital/core-cloud-devops"
+    labels:
+      - "dependencies"
+      - "patch"
