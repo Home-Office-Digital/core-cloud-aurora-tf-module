@@ -1,25 +1,45 @@
-## Example dependabot file
 version: 2
 updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    commit-message:
-      prefix: "(GHA)"
-    reviewers:
-      - "Home-Office-Digital/core-cloud-devops"
-    labels:
-      - "dependencies"
-      - "patch"
-  - package-ecosystem: "terraform"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    commit-message:
-      prefix: "(TF)"
-    reviewers:
-      - "Home-Office-Digital/core-cloud-devops"
-    labels:
-      - "dependencies"
-      - "patch"
+    # Enable Github Action updates
+    - package-ecosystem: "github-actions"
+      directory: "/"
+      schedule:
+          interval: "daily"
+      commit-message:
+          prefix: "chore(GHA)"
+      labels:
+          - "dependencies"
+          - "patch"
+          - "actions"
+      groups:
+          # One group for everything, majors included, since an action
+          # major is usually just a runtime bump
+          github-actions-all:
+              patterns:
+                  - "*"
+              update-types:
+                  - "minor"
+                  - "patch"
+                  - "major"
+
+    # Enable TF updates for Terraform Projects
+    - package-ecosystem: "terraform"
+      directory: "/"
+      schedule:
+          interval: "daily"
+      commit-message:
+          prefix: "chore(TF)"
+      labels:
+          - "dependencies"
+          - "patch"
+          - "terraform"
+      groups:
+          terraform-security:
+              applies-to: security-updates
+              patterns:
+                  - "*"
+          terraform-minor-and-patch:
+              applies-to: version-updates
+              update-types:
+                  - "minor"
+                  - "patch"
